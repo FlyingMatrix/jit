@@ -4,7 +4,7 @@ A pytorch implementation of Just image Transformers (JiT) for image generation
 
 ### 💻 Environment Configuration
 
-1. **Create a virtual environment with Python 3.10 using Anaconda Prompt:**
+1. **Create a virtual environment using Anaconda Prompt:**
    
    ```bash
    conda create -n jit python=3.10
