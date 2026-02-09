@@ -74,6 +74,10 @@ class SmoothedValue(object):
             value=self.value)
 
 class MetricLogger(object):
+    """
+        A helper class for tracking, smoothing, and printing training metrics
+        (like loss, accuracy, time per iteration, etc.) during model training or evaluation.
+    """
     pass
 
 
