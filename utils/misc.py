@@ -78,7 +78,41 @@ class MetricLogger(object):
         A helper class for tracking, smoothing, and printing training metrics
         (like loss, accuracy, time per iteration, etc.) during model training or evaluation.
     """
-    pass
+    def __init__(self, delimiter="\t"):
+        self.meters = defaultdict(SmoothedValue)    # a dictionary where every new key automatically gets a SmoothedValue object
+        self.delimiter = delimiter
+    
+    def update(self, **kwargs):    # keyword arguments will be packed into a dictionary
+        for k, v in kwargs.items():
+            if v is None:
+                continue
+            if isinstance(v, torch.Tensor):
+                v = v.item()
+            assert isinstance(v, (float, int))
+            self.meters[k].update(v)    # for self.meters[k], call SmoothedValue.update(v)
+
+    def __getattr__(self, attr):    # logger.attr
+        if attr in self.meters:
+            return self.meters[attr]
+        if attr in self.__dict__:
+            return self.__dict__[attr]
+        raise AttributeError("'{}' object has no attribute '{}'".format(type(self).__name__, attr))
+    
+    def __str__(self):  # print(logger)
+        dict = []
+        for name, meter in self.meters.items():
+            dict.append("{}: {}".format(name, str(meter)))
+        return self.delimiter.join(dict)
+    
+    def synchronize_between_processes(self):
+        for meter in self.meters.values():  # type(meter) -> SmoothedValue
+            meter.synchronize_between_processes()
+
+    def add_meter(self, name, meter):
+        self.meters[name] = meter
+
+    def log_every(self, iterable, print_freq, header=None):
+        pass
 
 
 
