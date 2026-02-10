@@ -112,7 +112,58 @@ class MetricLogger(object):
         self.meters[name] = meter
 
     def log_every(self, iterable, print_freq, header=None):
-        pass
+        # initialization
+        i = 0
+        if not header:
+            header = ''
+        start_time = time.time()                    # when the whole loop starts
+        end = time.time()                           # timestamp of previous iteration end
+        iter_time = SmoothedValue(fmt='{avg:.4f}')  # time per iteration
+        data_time = SmoothedValue(fmt='{avg:.4f}')  # time spent loading data
+        MB = 1024.0 * 1024.0
+        # log message formatting
+        space_fmt = ':' + str(len(str(len(iterable)))) + 'd'    # e.g., ':4d'
+        log_msg = [
+            header,
+            '[{0' + space_fmt + '}/{1}]',                       # dynamic iteration counter, e.g., '[{0:4d}/{1}]', 0: current iteration, 1: total iterations
+            'eta: {eta}',                                       # estimated time remaining
+            '{meters}',                                         # metrics
+            'time: {time}',                                     # timing info   
+            'data: {data}'                                      # data info
+        ]
+        if torch.cuda.is_available():                   
+            log_msg.append('max mem: {memory:.0f}')             # GPU memory (if available)
+        log_msg = self.delimiter.join(log_msg)                  # log_msg to string
+
+        for obj in iterable:
+            data_time.update(time.time() - end)                                 # obj loading time
+            yield obj                                                           # return the obj to the caller to process (training or computation)
+            iter_time.update(time.time() - end)                                 # elapsed time since last iteration
+            if i % print_freq == 0 or i == len(iterable) - 1:                   # for every print_freq steps or last step
+                eta_seconds = iter_time.global_avg * (len(iterable) - i)        # estimated time remaining
+                eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
+                if torch.cuda.is_available():
+                    print(log_msg.format(
+                        i, len(iterable), eta=eta_string,
+                        meters=str(self),
+                        time=str(iter_time), data=str(data_time),
+                        memory=torch.cuda.max_memory_allocated() / MB))
+                else:
+                    print(log_msg.format(
+                        i, len(iterable), eta=eta_string,
+                        meters=str(self),
+                        time=str(iter_time), data=str(data_time)))
+            i += 1
+            end = time.time()                                   # timestamp update for next iteration
+        total_time = time.time() - start_time    
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        print('{} Total time: {} ({:.4f} s / iter)'.format(
+            header, total_time_str, total_time / len(iterable)))   
+    
+       
+
+
+
 
 
 
