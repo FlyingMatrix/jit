@@ -1,4 +1,4 @@
-import builtins                             # gives access to Python’s built-in functions (like print)
+import builtins                             # gives access to Python's built-in functions (like print)
 import datetime
 import os
 import time
@@ -159,15 +159,22 @@ class MetricLogger(object):
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         print('{} Total time: {} ({:.4f} s / iter)'.format(
             header, total_time_str, total_time / len(iterable)))   
-    
-       
 
+def setup_for_distributed(is_master):
+    """
+        This function disables printing when not in master process
+    """
+    builtin_print = builtins.print  # save global print() as builtin_print
 
+    def print(*args, **kwargs):
+        force = kwargs.pop('force', False)
+        force = force or (get_world_size() > 8)
+        if is_master or force:
+            now = datetime.datetime.now().time()    # HH:MM:SS.microsecond
+            builtin_print('[{}] '.format(now), end='')  # [HH:MM:SS.microsecond]
+            builtin_print(*args, **kwargs)
 
-
-
-
-
+    builtins.print = print
 
 def is_dist_available_and_initialized():
     if not dist.is_available():
@@ -175,3 +182,78 @@ def is_dist_available_and_initialized():
     if not dist.is_initialized():
         return False
     return True
+   
+def get_world_size():
+    if not is_dist_available_and_initialized():
+        return 1
+    return dist.get_world_size()    # total number of processes (GPUs)
+
+def get_rank():
+    if not is_dist_available_and_initialized():
+        return 0
+    return dist.get_rank()  # get the unique ID of the current process, ranging from 0 to world_size - 1
+
+def is_main_process():
+    return get_rank() == 0  # rank 0 is usually the master process
+
+def save_on_master(*args, **kwargs):
+    if is_main_process():
+        torch.save(*args, **kwargs)
+
+def init_distributed_mode(args):
+    if args.dist_on_itp:                                        # OpenMPI
+        args.rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
+        args.world_size = int(os.environ['OMPI_COMM_WORLD_SIZE'])
+        args.gpu = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
+        args.dist_url = "tcp://%s:%s" % (os.environ['MASTER_ADDR'], os.environ['MASTER_PORT'])
+        os.environ['LOCAL_RANK'] = str(args.gpu)
+        os.environ['RANK'] = str(args.rank)
+        os.environ['WORLD_SIZE'] = str(args.world_size)
+    elif 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:   # standard PyTorch launcher
+        args.rank = int(os.environ["RANK"])
+        args.world_size = int(os.environ['WORLD_SIZE'])
+        args.gpu = int(os.environ['LOCAL_RANK'])
+    elif 'SLURM_PROCID' in os.environ:                          # SLURM
+        args.rank = int(os.environ['SLURM_PROCID'])
+        args.gpu = args.rank % torch.cuda.device_count()
+    else:                                                       # Fallback: non-distributed
+        print('Not using distributed mode')
+        setup_for_distributed(is_master=True)  
+        args.distributed = False
+        return
+    
+    args.distributed = True
+    torch.cuda.set_device(args.gpu)
+    args.dist_backend = 'nccl'  # Use NCCL for inter-GPU communication
+    print('| distributed init (rank {}): {}, gpu {}'.format(args.rank, args.dist_url, args.gpu), flush=True)
+
+    # initialize communication between multiple processes
+    torch.distributed.init_process_group(backend=args.dist_backend, 
+                                         init_method=args.dist_url,     # how processes discover each other -> by args.dist_url
+                                         world_size=args.world_size, 
+                                         rank=args.rank
+                                         )
+    torch.distributed.barrier()                                         # hard synchronization point
+    setup_for_distributed(args.rank == 0)                               # allow only rank 0 to print/log
+
+def add_weight_decay(model, weight_decay=0, skip_list=()):
+    """
+        splits model parameters into two groups: no weight decay and with weight decay
+    """
+    decay = []
+    no_decay = []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue  # ignore frozen weights
+        if len(param.shape) == 1 or name.endswith(".bias") or name in skip_list or 'diffloss' in name:
+            no_decay.append(param)  # no weight decay on bias, norm (1D parameters) and diffloss
+        else:
+            decay.append(param)
+
+    return [
+        {'params': no_decay, 'weight_decay': 0.},
+        {'params': decay, 'weight_decay': weight_decay}]
+
+def save_model(args, model_without_ddp, optimizer, epoch, epoch_name=None):
+    pass
+
