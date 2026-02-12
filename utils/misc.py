@@ -295,4 +295,12 @@ def save_model(args, model_without_ddp, optimizer, epoch, epoch_name=None):
 
     save_on_master(to_save, checkpoint_path)    # save only if main process
 
-
+def all_reduce_mean(x):
+    world_size = get_world_size()   # get total number of processes
+    if world_size > 1:
+        x = torch.tensor(x).cuda()  # transfer x into a CUDA tensor (CPU -> GPU)
+        dist.all_reduce(x)          # use dist.all_reduce() to sum x across all processes
+        x /= world_size             # get the mean
+        return x.item()
+    else:                           # world_size == 0 -> None GPU usage, so CPU-only, world_size == 1 -> single process
+        return x
