@@ -254,6 +254,45 @@ def add_weight_decay(model, weight_decay=0, skip_list=()):
         {'params': no_decay, 'weight_decay': 0.},
         {'params': decay, 'weight_decay': weight_decay}]
 
-def save_model(args, model_without_ddp, optimizer, epoch, epoch_name=None):
-    pass
+def save_model(args, model_without_ddp, optimizer, epoch, epoch_name=None): 
+    """
+        A Distributed Data Parallel (DDP) wrapper (e.g., torch.nn.parallel.DistributedDataParallel) is used 
+        when training a model across multiple GPUs or multiple machines.
+        It ensures that training stays correct, synchronized, and efficient by automatically averaging gradients 
+        across GPUs during distributed training, enabling correct and scalable multi-GPU training.
+
+        Training process often needs both:
+            (1) the DDP-wrapped model -> for forward/backward
+                model = torch.nn.parallel.DistributedDataParallel(model)
+                the actual model lives at "model.module"
+            (2) the raw model -> for saving, loading, EMA, weight inspection, etc.
+
+        For this reason, it is commonly seen as:
+            model_without_ddp = model.module if hasattr(model, "module") else model
+    """
+    if epoch_name is None:
+        epoch_name = str(epoch)
+    output_dir = Path(args.output_dir)
+    checkpoint_path = output_dir / ('checkpoint-%s.pth' % epoch_name)
+    to_save = {
+        'model': model_without_ddp.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'epoch': epoch,
+        'args': args,
+    }
+
+    # EMA of the model parameters: a smoothed copy of model weights updated using Exponential Moving Average (EMA)
+    # ... which is often used for more stable and better-performing evaluation models
+    ema_state_dict1 = copy.deepcopy(model_without_ddp.state_dict()) 
+    ema_state_dict2 = copy.deepcopy(model_without_ddp.state_dict())     # state_dict() contains parameters and buffers, this can ensure that the checkpoint is complete and loadable
+    # the loop only replaces named parameters, not buffers
+    for i, (name, param) in enumerate(model_without_ddp.named_parameters()):
+        assert name in ema_state_dict1 and name in ema_state_dict2
+        ema_state_dict1[name] = model_without_ddp.ema_params1[i]
+        ema_state_dict2[name] = model_without_ddp.ema_params2[i]    # ema_params1 and ema_params2 should have different decays
+    to_save['model_ema1'] = ema_state_dict1
+    to_save['model_ema2'] = ema_state_dict2     # add into to_save dict
+
+    save_on_master(to_save, checkpoint_path)    # save only if main process
+
 
