@@ -24,7 +24,10 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
 
-    
+    for data_iter_step, (x, labels) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+        # learning rate scheduler per iteration
+        lr_scheduler.adjust_lr(optimizer, epoch + data_iter_step / len(data_loader), args)
+        
 
     
 
