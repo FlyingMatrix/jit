@@ -28,6 +28,12 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
         # learning rate scheduler per iteration
         lr_scheduler.adjust_lr(optimizer, epoch + data_iter_step / len(data_loader), args)
         
+        # normalize image to [-1, 1]
+        x = x.to(device, non_blocking=True).to(torch.float32).div_(255)     # non_blocking=True allows async transfer when using pinned memory
+        x = x * 2.0 - 1.0   # from [0, 1] to [-1, 1]
+        labels = labels.to(device, non_blocking=True)
+
+        
 
     
 
