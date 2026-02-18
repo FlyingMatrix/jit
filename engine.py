@@ -45,7 +45,7 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
         loss.backward()
         optimizer.step()
 
-        torch.cuda.synchronize()    # block the CPU until all queued CUDA operations on the GPU are finished
+        torch.cuda.synchronize()    # block CPU until all queued CUDA operations on GPU are finished
         model_without_ddp.update_ema()  # update the EMA of the model parameters to smooth or stabilize the model's weights over training steps
         
         # add loss_value and lr into deque (double-ended queue)
@@ -57,18 +57,11 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
         loss_value_reduce = misc.all_reduce_mean(loss_value)
 
         if log_writer is not None:
-            pass
-
-
-
-
-
-
-        
-
-    
-
-
+            # use epoch_1000x as x-axis in TensorBoard to calibrate curves
+            epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)   # a smoothed integer progress counter in units of 0.001 epochs
+            if data_iter_step % args.log_freq == 0:
+                log_writer.add_scalar('train_loss', loss_value_reduce, epoch_1000x)
+                log_writer.add_scalar('lr', lr, epoch_1000x)
 
 def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     """
