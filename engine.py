@@ -10,6 +10,16 @@ import torch_fidelity   # a pytorch-based toolkit for evaluating generative mode
 import utils.misc as misc
 import utils.lr_scheduler as lr_scheduler
 
+"""
+    Here, a workflow summary:
+    - Training: use model (with distributed data parallel, DDP) -> compute gradients -> update parameters
+    - EMA update: update model_without_ddp with EMA of model parameters
+    - Evaluation: Run interference with model_without_ddp (EMA version) to ensure more stable and consistent metrics
+
+    The DDP wrapper itself is only necessary during gradient computation. 
+    For inference/evaluation, there is no need for gradient syncing, model_without_ddp will be used.
+"""
+
 def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, epoch, log_writer=None, args=None):
     """
         train the model for one epoch
@@ -72,5 +82,34 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
                 - similarity to real data distribution
             IS (Inception Score) evaluates image quality and diversity
     """
-    pass
+    model_without_ddp.eval()
+    world_size = misc.get_world_size()          # get total number of processes
+    local_rank = misc.get_rank()                # get the unique ID of the current process, ranging from 0 to world_size - 1
+    num_steps = args.num_images // (batch_size * world_size) + 1
+
+    # generated images saving path - parameter settings from denoiser.py
+    save_folder = os.path.join(
+        args.output_dir,
+        "{}-steps{}-cfg{}-interval{}-{}-image{}-res{}".format(
+            model_without_ddp.method, model_without_ddp.steps, model_without_ddp.cfg_scale,
+            model_without_ddp.cfg_interval[0], model_without_ddp.cfg_interval[1], args.num_images, args.img_size
+        )
+    )
+    print(">>> Save to:", save_folder)
+    if misc.get_rank() == 0 and not os.path.exists(save_folder):
+        os.makedirs(save_folder)    # only the main process should create directories to avoid race conditions
+
+    # switch the model's weights to the EMA (Exponential Moving Average) version before evaluation or saving
+    model_state_dict = copy.deepcopy(model_without_ddp.state_dict())    # original weights
+    ema_state_dict = copy.deepcopy(model_without_ddp.state_dict())      # will be overwritten with EMA weights
+    for i, (name, _value) in enumerate(model_without_ddp.named_parameters()):
+        assert name in ema_state_dict
+        ema_state_dict[name] = model_without_ddp.ema_params1[i]
+    print(">>> Switch to EMA weights")
+    model_without_ddp.load_state_dict(ema_state_dict)
+
+    # ensure that the number of images per class is equal
+    
+
+
 
