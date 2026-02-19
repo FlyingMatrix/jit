@@ -108,8 +108,24 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     print(">>> Switch to EMA weights")
     model_without_ddp.load_state_dict(ema_state_dict)
 
-    # ensure that the number of images per class is equal
-    
+    # ensure that the number of generated images per class is equal
+    class_num = args.class_num
+    assert args.num_images % class_num == 0, "Number of generated images per class must be the same"
+    class_label_gen_world = np.arange(0, class_num).repeat(args.num_images // class_num)
+    class_label_gen_world = np.hstack([class_label_gen_world, np.zeros(args.num_images)])
+
+    for i in range(num_steps):
+        print(">>> Generation step {}/{}".format(i, num_steps))
+
+        global_batch = world_size * batch_size
+        start_idx = global_batch * i + local_rank * batch_size
+        end_idx = start_idx + batch_size
+        labels_gen = torch.as_tensor(class_label_gen_world[start_idx:end_idx], 
+                                     dtype=torch.long, 
+                                     device="cuda")
+        
+        
+
 
 
 
