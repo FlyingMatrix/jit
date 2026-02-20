@@ -8,3 +8,7 @@ class Denoiser(nn.Module):
     @torch.no_grad()
     def update_ema(self):
         pass
+
+    @torch.no_grad()
+    def generate(self, labels):
+        pass

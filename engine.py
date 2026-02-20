@@ -124,7 +124,26 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
                                      dtype=torch.long, 
                                      device="cuda")
         
+        # run forward pass in bfloat16 mixed precision and keep certain ops in FP32, good choice on Ampere+ GPUs (A100, H100, RTX 30/40 series)
+        with torch.amp.autocast('cuda', dtype=torch.bfloat16):  
+            sampled_images = model_without_ddp.generate(labels_gen)
+
+        torch.distributed.barrier()     # force all processes to wait until everyone reaches this line
+
+        # denormalize generated images
+        sampled_images = (sampled_images + 1) / 2   # [-1, 1] -> [0, 1]
+        sampled_images = sampled_images.detach().cpu()  # sampled_images -> (batch_size, channels, height, width)
+
+        # compute global image ID
+        for idx_in_batch in range(sampled_images.size(0)):     # loop over each generated image inside the current batch
+            img_id = i * sampled_images.size(0) * world_size + local_rank * sampled_images.size(0) + idx_in_batch
+            if img_id >= args.num_images:
+                break
+            
+
+
         
+
 
 
 
