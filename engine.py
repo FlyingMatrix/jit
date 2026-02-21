@@ -76,11 +76,6 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
 def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     """
         generate images and computes FID / IS for evaluation
-            FID (Fréchet Inception Distance) compares real images vs generated images in feature space, it measures:
-                - image quality
-                - diversity
-                - similarity to real data distribution
-            IS (Inception Score) evaluates image quality and diversity
     """
     model_without_ddp.eval()
     world_size = misc.get_world_size()          # get total number of processes
@@ -145,4 +140,16 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
 
     torch.distributed.barrier()
        
+    # back to original weights (no ema version)
+    print(">>> Switch back to original weights...")
+    model_without_ddp.load_state_dict(model_state_dict)
+
+    # compute FID and IS
+    """
+        FID (Fréchet Inception Distance) compares real images vs generated images in feature space, it measures:
+            - image quality
+            - diversity
+            - similarity to real data distribution
+        IS (Inception Score) evaluates image quality and diversity
+    """
     
