@@ -25,8 +25,14 @@ def broadcast(tensors, dim=-1):
     return torch.cat(tensors, dim = dim)    # concatenate along the chosen dimension
 
 def rotate_half(x):
-    pass
-
+    """
+        take a tensor whose last dimension is even, splits it into pairs, rotates each pair by 90° in 2D, and flattens back
+        common use: Rotary Positional Embeddings (RoPE) in Transformers
+    """
+    x = rearrange(x, '... (d r) -> ... d r', r=2)   # group every two elements in the last dimension
+    x1, x2 = x.unbind(dim=-1)                       # split the last dimension (r=2) into two separate tensors
+    x = torch.stack((-x2, x1), dim=-1)              # perform a vectorized 90° rotation of every 2D chunk in parallel
+    return rearrange(x, '... d r -> ... (d r)')     # flatten the last two dimensions back into the original shape
 
 class VisionRotaryEmbedding(nn.Module):
     pass
