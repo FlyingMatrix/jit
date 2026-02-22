@@ -152,4 +152,32 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
             - similarity to real data distribution
         IS (Inception Score) evaluates image quality and diversity
     """
-    
+    if log_writer is not None:
+        if args.img_size == 256:
+            fid_statistics_file = 'fid_stats/jit_in256_stats.npz'
+        elif args.img_size == 512:
+            fid_statistics_file = 'fid_stats/jit_in512_stats.npz'
+        else:
+            raise NotImplementedError
+        # compute evaluation metrics - FID and IS
+        metrics_dict = torch_fidelity.calculate_metrics(
+            input1=save_folder,                         # path to generated images
+            input2=None,                                # path to real images, here is None
+            fid_statistics_file=fid_statistics_file,    # precomputed stats of real images, containing mu_real and sigmal_real
+            cuda=True,
+            isc=True,                                   # IS
+            fid=True,                                   # FID
+            kid=False,
+            prc=False,
+            verbose=False,
+        )
+        fid = metrics_dict['frechet_inception_distance']
+        inception_score = metrics_dict['inception_score_mean']
+        postfix = "_cfg{}_res{}".format(model_without_ddp.cfg_scale, args.img_size)
+        log_writer.add_scalar('fid{}'.format(postfix), fid, epoch)
+        log_writer.add_scalar('is{}'.format(postfix), inception_score, epoch)
+        print(">>> FID: {:.4f}, Inception Score: {:.4f}".format(fid, inception_score))
+        shutil.rmtree(save_folder)      # recursively delete an entire directory tree of save_folder to free space for next evaluation round
+
+    torch.distributed.barrier()
+
