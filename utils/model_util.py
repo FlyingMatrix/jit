@@ -22,7 +22,7 @@ def broadcast(tensors, dim=-1):
     expandable_shapes = list(zip(*(sizes for _, sizes in expanded_dims)))
     tensors = list(map(lambda t: t[0].expand(*t[1]), zip(tensors, expandable_shapes)))
     tensors = [tensor.expand(*shape) for tensor, shape in zip(tensors, expandable_shapes)]  # broadcast the tensor to the target shape
-    return torch.cat(tensors, dim = dim)    # concatenate along the chosen dimension
+    return torch.cat(tensors, dim=dim)    # concatenate along the chosen dimension
 
 def rotate_half(x):
     """
@@ -35,7 +35,64 @@ def rotate_half(x):
     return rearrange(x, '... d r -> ... (d r)')     # flatten the last two dimensions back into the original shape
 
 class VisionRotaryEmbedding(nn.Module):
-    pass
+    """
+        Vision Rotary Embedding (ViRoPE) is a 2D extension of Rotary Position Embedding (RoPE) used in Transformers.
+        It encodes image spatial position (height and width) directly into attention features by rotating query and key vectors in embedding space.
+        Mathematically, RoPE rotates feature pairs:
+            (x1, x2) -> (x1*cos(_theta)-x2*sin(_theta), x1*sin(_theta)+x2*cos(_theta))
+        This is a 2D rotation in feature space.
+    """
+    def __init__(self, 
+                 dim,                   # feature dimension to rotate (embedding dimension)
+                 pt_seq_len,            # pretraining sequence length
+                 ft_seq_len=None,       # fine-tuning sequence length
+                 custom_freqs=None,     # custom frequency values
+                 freqs_for='lang',      # mode: 'lang', 'pixel', 'constant'
+                 theta=10000,           # base scaling constant (default 10000)
+                 max_freq=10,           # used for pixel frequency scaling
+                 num_freqs=1            # used for constant frequency mode
+                ):
+        super.__init__()
+
+        if custom_freqs:
+            freqs = custom_freqs
+        elif freqs_for == 'lang':                                       # language mode
+            dimension_index = torch.arange(0, dim, 2)[:(dim // 2)]
+            freqs_w = 1. / (theta ** (dimension_index.float() / dim))   # based on classic RoPE frequency formula
+        elif freqs_for == 'pixel':                                      # pixel mode, used for vision, linear frequency spacing, better suited for spatial data
+            freqs_w = torch.linspace(1., max_freq / 2, dim // 2) * pi
+        elif freqs_for == 'constant':
+            freqs_w = torch.ones(num_freqs).float()                     # every dimension uses same frequency
+        else:
+            raise ValueError(f'unknown modality {freqs_for}')   
+        
+        if ft_seq_len is None: ft_seq_len = pt_seq_len
+        t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len          # create a continuous mapping from fine-tuning positions into the pre-training position space
+
+        """
+            In standard (1D) RoPE: we rotate features using: theta = position * frequency, then apply: cos(theta) and sin(theta)
+            In Vision RoPE (2D case): each token has a height index h and a width index w, so we compute:
+                - theta_h = h * frequency
+                - theta_w = w * frequency
+        """
+        # compute height frequency
+        freqs_height = t.unsqueeze(-1) * freqs_w
+        freqs_height = repeat(freqs_height, '... n -> ... (n r)', r = 2)
+
+        # compute width frequency
+        freqs_width = t.unsqueeze(-1) * freqs_w
+        freqs_width = repeat(freqs_width, '... n -> ... (n r)', r = 2)
+
+        # broadcast and concatenate freqs_height with freqs_width
+        freqs = ...
+
+        # store precomputed cosine and sine rotation factors inside the module which can be automatically moved to GPU (not trainable)
+        self.register_buffer("freqs_cos", freqs.cos())
+        self.register_buffer("freqs_sin", freqs.sin())
+
+    def forward(self, t, start_index=0):
+        pass
+
 
 class VisionRotaryEmbeddingFast(nn.Module):
     pass
