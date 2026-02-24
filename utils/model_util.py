@@ -98,8 +98,11 @@ class VisionRotaryEmbedding(nn.Module):
         self.register_buffer("freqs_cos", freqs.cos())      # (height, width, dim*2)
         self.register_buffer("freqs_sin", freqs.sin())      # (height, width, dim*2)
 
-    def forward(self, t, start_index=0):
-        pass
+    def forward(self, t, start_index=0):    # apply rotation
+        rot_dim = self.freqs_cos.shape[-1]
+        end_index = start_index + rot_dim
+        assert rot_dim <= t.shape[-1], f'feature dimension {t.shape[-1]} is not of sufficient size to rotate in all the positions {rot_dim}'
+        
 
 
 class VisionRotaryEmbeddingFast(nn.Module):
