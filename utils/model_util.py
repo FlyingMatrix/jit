@@ -99,10 +99,18 @@ class VisionRotaryEmbedding(nn.Module):
         self.register_buffer("freqs_sin", freqs.sin())      # (height, width, dim*2)
 
     def forward(self, t, start_index=0):    # apply rotation
-        rot_dim = self.freqs_cos.shape[-1]
+        """
+            - t: tensor to rotate (e.g., query or key)
+            - start_index: where rotation starts in feature dimension
+        """
+        rot_dim = self.freqs_cos.shape[-1]      # number of dimensions used for rotation
         end_index = start_index + rot_dim
+        # the number of dimensions to be rotated should not be larger than the total feature dimension of t
         assert rot_dim <= t.shape[-1], f'feature dimension {t.shape[-1]} is not of sufficient size to rotate in all the positions {rot_dim}'
+        # slice feature tensor
+        t_left, t, t_right = t[..., :start_index], t[..., start_index:end_index], t[..., end_index:]
         
+
 
 
 class VisionRotaryEmbeddingFast(nn.Module):
