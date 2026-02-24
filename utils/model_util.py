@@ -20,7 +20,6 @@ def broadcast(tensors, dim=-1):
     expanded_dims = [(i, (size,) * num_tensors) for i, size in max_dims]
     expanded_dims.insert(dim, (dim, dims[dim]))     # now expanded_dims contains all dimensions
     expandable_shapes = list(zip(*(sizes for _, sizes in expanded_dims)))
-    tensors = list(map(lambda t: t[0].expand(*t[1]), zip(tensors, expandable_shapes)))
     tensors = [tensor.expand(*shape) for tensor, shape in zip(tensors, expandable_shapes)]  # broadcast the tensor to the target shape
     return torch.cat(tensors, dim=dim)    # concatenate along the chosen dimension
 
