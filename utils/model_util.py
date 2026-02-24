@@ -4,7 +4,7 @@ import numpy as np
 from math import pi
 from einops import rearrange, repeat    # used to reshape, permute, flatten, split, combine or repeat tensor dimensions in a very readable way
 
-def broadcast(tensors, dim=-1):
+def broad_concat(tensors, dim=-1):
     """
         broadcast tensors and concatenate along the chosen dimension
     """
@@ -66,28 +66,37 @@ class VisionRotaryEmbedding(nn.Module):
             raise ValueError(f'unknown modality {freqs_for}')   
         
         if ft_seq_len is None: ft_seq_len = pt_seq_len
-        t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len          # create a continuous mapping from fine-tuning positions into the pre-training position space
+        t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len          # mapping sequence indices from fine-tuning space into the pre-training space
 
         """
             In standard (1D) RoPE: we rotate features using: theta = position * frequency, then apply: cos(theta) and sin(theta)
             In Vision RoPE (2D case): each token has a height index h and a width index w, so we compute:
                 - theta_h = h * frequency
                 - theta_w = w * frequency
+
+            Moreover, we define dim // 2 frequencies because each frequency governs a 2D rotation pair, 
+            and we duplicate them so each pair of embedding channels shares the same frequency.
         """
         # compute height frequency
-        freqs_height = t.unsqueeze(-1) * freqs_w
-        freqs_height = repeat(freqs_height, '... n -> ... (n r)', r = 2)
+        freqs_height = t.unsqueeze(-1) * freqs_w                            # (seq_len, dim // 2)
+        freqs_height = repeat(freqs_height, '... n -> ... (n r)', r = 2)    # (seq_len, dim)
 
         # compute width frequency
-        freqs_width = t.unsqueeze(-1) * freqs_w
-        freqs_width = repeat(freqs_width, '... n -> ... (n r)', r = 2)
+        freqs_width = t.unsqueeze(-1) * freqs_w                             # (seq_len, dim // 2)
+        freqs_width = repeat(freqs_width, '... n -> ... (n r)', r = 2)      # (seq_len, dim)
 
         # broadcast and concatenate freqs_height with freqs_width
-        freqs = ...
+        freqs = broad_concat((freqs_height[:, None, :], freqs_width[None, :, :]), dim=-1)  
+        """
+            # freqs_height[:, None, :] -> (height, 1, dim)
+            # freqs_width[None, :, :] -> (1, width, dim)
+            # expandable_shapes -> [(height, width, dim), (height, width, dim)]
+            # freqs -> (height, width, dim*2)
+        """
 
         # store precomputed cosine and sine rotation factors inside the module which can be automatically moved to GPU (not trainable)
-        self.register_buffer("freqs_cos", freqs.cos())
-        self.register_buffer("freqs_sin", freqs.sin())
+        self.register_buffer("freqs_cos", freqs.cos())      # (height, width, dim*2)
+        self.register_buffer("freqs_sin", freqs.sin())      # (height, width, dim*2)
 
     def forward(self, t, start_index=0):
         pass
