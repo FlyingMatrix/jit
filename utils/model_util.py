@@ -27,6 +27,7 @@ def rotate_half(x):
     """
         take a tensor whose last dimension is even, splits it into pairs, rotates each pair by 90° in 2D, and flattens back
         common use: Rotary Positional Embeddings (RoPE) in Transformers
+                    x = [x1, x2, x3, x4, ...]  =>  rotate_half(x) = [-x2, x1, -x4, x3, ...]
     """
     x = rearrange(x, '... (d r) -> ... d r', r=2)   # group every two elements in the last dimension
     x1, x2 = x.unbind(dim=-1)                       # split the last dimension (r=2) into two separate tensors
@@ -98,9 +99,9 @@ class VisionRotaryEmbedding(nn.Module):
         self.register_buffer("freqs_cos", freqs.cos())      # (height, width, dim*2)
         self.register_buffer("freqs_sin", freqs.sin())      # (height, width, dim*2)
 
-    def forward(self, t, start_index=0):    # apply rotation
+    def forward(self, t, start_index=0):    # apply 2D rotation to pairs of features
         """
-            - t: tensor to rotate (e.g., query or key)
+            - t: tensor to rotate (e.g., query or key) -> (batch, seq_len, num_heads, head_dim)
             - start_index: where rotation starts in feature dimension
         """
         rot_dim = self.freqs_cos.shape[-1]      # number of dimensions used for rotation
@@ -109,8 +110,8 @@ class VisionRotaryEmbedding(nn.Module):
         assert rot_dim <= t.shape[-1], f'feature dimension {t.shape[-1]} is not of sufficient size to rotate in all the positions {rot_dim}'
         # slice feature tensor
         t_left, t, t_right = t[..., :start_index], t[..., start_index:end_index], t[..., end_index:]
-        
-
+        t = (t * self.freqs_cos) + (rotate_half(t) * self.freqs_sin)
+        return torch.cat((t_left, t, t_right), dim = -1)
 
 
 class VisionRotaryEmbeddingFast(nn.Module):
