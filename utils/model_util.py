@@ -101,16 +101,22 @@ class VisionRotaryEmbedding(nn.Module):
 
     def forward(self, t, start_index=0):    # apply 2D rotation to pairs of features
         """
-            - t: tensor to rotate (e.g., query or key) -> (batch, seq_len, num_heads, head_dim)
+            - t: tensor to rotate (e.g., query or key in Attention) -> shape = (batch, height, width, dim*2)
+              the last dimension has to match with freqs_cos.shape[-1] = dim*2 to ensure rotation works
             - start_index: where rotation starts in feature dimension
         """
-        rot_dim = self.freqs_cos.shape[-1]      # number of dimensions used for rotation
+        rot_dim = self.freqs_cos.shape[-1]  # number of dimensions used for rotation
         end_index = start_index + rot_dim
         # the number of dimensions to be rotated should not be larger than the total feature dimension of t
         assert rot_dim <= t.shape[-1], f'feature dimension {t.shape[-1]} is not of sufficient size to rotate in all the positions {rot_dim}'
         # slice feature tensor
         t_left, t, t_right = t[..., :start_index], t[..., start_index:end_index], t[..., end_index:]
-        t = (t * self.freqs_cos) + (rotate_half(t) * self.freqs_sin)
+        t = (t * self.freqs_cos) + (rotate_half(t) * self.freqs_sin)    # the * is element-wise multiplication
+        """ 
+            (batch, height, width, dim*2) * (height, width, dim*2) -> (batch, height, width, dim*2)
+            (batch, height, width, dim*2) + (batch, height, width, dim*2) = (batch, height, width, dim*2)
+            so, t.shape = (batch, height, width, dim*2) -> no dimension changes, only values are rotated
+        """
         return torch.cat((t_left, t, t_right), dim = -1)
 
 
