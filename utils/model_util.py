@@ -55,7 +55,7 @@ class VisionRotaryEmbedding(nn.Module):
         super.__init__()
 
         if custom_freqs:
-            freqs = custom_freqs
+            freqs_w = custom_freqs
         elif freqs_for == 'lang':                                       # language mode
             dimension_index = torch.arange(0, dim, 2)[:(dim // 2)]
             freqs_w = 1. / (theta ** (dimension_index.float() / dim))   # based on classic RoPE frequency formula
@@ -115,7 +115,7 @@ class VisionRotaryEmbedding(nn.Module):
         """ 
             (batch, height, width, dim*2) * (height, width, dim*2) -> (batch, height, width, dim*2)
             (batch, height, width, dim*2) + (batch, height, width, dim*2) = (batch, height, width, dim*2)
-            so, t.shape = (batch, height, width, dim*2) -> no dimension changes, only values are rotated
+            so, t.shape = (batch, height, width, dim*2) -> no dimension changes, only values are rotated 
         """
         return torch.cat((t_left, t, t_right), dim = -1)
 
