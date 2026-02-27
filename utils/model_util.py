@@ -38,26 +38,27 @@ class VisionRotaryEmbedding(nn.Module):
     """
         Vision Rotary Embedding (ViRoPE) is a 2D extension of Rotary Position Embedding (RoPE) used in Transformers.
         It encodes image spatial position (height and width) directly into attention features by rotating query and key vectors in embedding space.
-        Mathematically, RoPE rotates feature pairs:
+        Mathematically, ViRoPE rotates feature pairs:
             (x1, x2) -> (x1*cos(_theta)-x2*sin(_theta), x1*sin(_theta)+x2*cos(_theta))
         This is a 2D rotation in feature space.
     """
-    def __init__(self, 
-                 dim,                   # feature dimension to rotate (embedding dimension)
-                 pt_seq_len,            # pretraining sequence length
-                 ft_seq_len=None,       # fine-tuning sequence length
-                 custom_freqs=None,     # custom frequency values
-                 freqs_for='lang',      # mode: 'lang', 'pixel', 'constant'
-                 theta=10000,           # base scaling constant (default 10000)
-                 max_freq=10,           # used for pixel frequency scaling
-                 num_freqs=1            # used for constant frequency mode
-                ):
+    def __init__(
+            self, 
+            dim,                   # feature dimension to rotate (embedding dimension)
+            pt_seq_len,            # pretraining sequence length
+            ft_seq_len=None,       # fine-tuning sequence length
+            custom_freqs=None,     # custom frequency values
+            freqs_for='lang',      # mode: 'lang', 'pixel', 'constant'
+            theta=10000,           # base scaling constant (default 10000)
+            max_freq=10,           # used for pixel frequency scaling
+            num_freqs=1            # used for constant frequency mode
+        ):
         super.__init__()
 
         if custom_freqs:
             freqs_w = custom_freqs
         elif freqs_for == 'lang':                                       # language mode
-            dimension_index = torch.arange(0, dim, 2)[:(dim // 2)]
+            dimension_index = torch.arange(0, dim, 2)[:(dim // 2)]      # RoPE needs: number_of_frequencies = number_of_dimension_pairs = dim//2
             freqs_w = 1. / (theta ** (dimension_index.float() / dim))   # based on classic RoPE frequency formula
         elif freqs_for == 'pixel':                                      # pixel mode, used for vision, linear frequency spacing, better suited for spatial data
             freqs_w = torch.linspace(1., max_freq / 2, dim // 2) * pi
@@ -67,7 +68,7 @@ class VisionRotaryEmbedding(nn.Module):
             raise ValueError(f'unknown modality {freqs_for}')   
         
         if ft_seq_len is None: ft_seq_len = pt_seq_len
-        t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len          # mapping sequence indices from fine-tuning space into the pre-training space
+        t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len          # t is the fine-tuning token positions, we stretch them (shorter or longer) into the pretraining coordinate scale
 
         """
             In standard (1D) RoPE: we rotate features using: theta = position * frequency, then apply: cos(theta) and sin(theta)
@@ -75,15 +76,15 @@ class VisionRotaryEmbedding(nn.Module):
                 - theta_h = h * frequency
                 - theta_w = w * frequency
 
-            Moreover, we define dim // 2 frequencies because each frequency governs a 2D rotation pair, 
-            and we duplicate them so each pair of embedding channels shares the same frequency.
+            Moreover, we define dim//2 frequencies because each frequency governs a 2D rotation pair, 
+            we duplicate frequencies into dim, so each pair of embedding channels shares the same frequency.
         """
         # compute height frequency
-        freqs_height = t.unsqueeze(-1) * freqs_w                            # (seq_len, dim // 2)
+        freqs_height = t.unsqueeze(-1) * freqs_w                            # (seq_len, dim//2)
         freqs_height = repeat(freqs_height, '... n -> ... (n r)', r = 2)    # (seq_len, dim)
 
         # compute width frequency
-        freqs_width = t.unsqueeze(-1) * freqs_w                             # (seq_len, dim // 2)
+        freqs_width = t.unsqueeze(-1) * freqs_w                             # (seq_len, dim//2)
         freqs_width = repeat(freqs_width, '... n -> ... (n r)', r = 2)      # (seq_len, dim)
 
         # broadcast and concatenate freqs_height with freqs_width
@@ -119,9 +120,46 @@ class VisionRotaryEmbedding(nn.Module):
         """
         return torch.cat((t_left, t, t_right), dim = -1)
 
-
 class VisionRotaryEmbeddingFast(nn.Module):
-    pass
+    def __init__(
+            self, 
+            dim,                   # feature dimension to rotate (embedding dimension)
+            pt_seq_len=16,         # pretraining sequence length
+            ft_seq_len=None,       # fine-tuning sequence length
+            custom_freqs=None,     # custom frequency values
+            freqs_for='lang',      # mode: 'lang', 'pixel', 'constant'
+            theta=10000,           # base scaling constant (default 10000)
+            max_freq=10,           # used for pixel frequency scaling
+            num_freqs=1,           # used for constant frequency mode
+            num_cls_token=0        # number of classification tokens
+        ):
+        super.__init__()
+        """
+            num_cls_token tells the module how many special classification tokens are added at the beginning of the sequence, 
+            so Rotary Position Embedding (RoPE) can be handled correctly.
+            When using a Vision Transformer or BERT-style model, it is usually set to 1.
+            When using a pure decoder model without CLS tokens, it's usually 0.        
+        """
+
+        if custom_freqs:
+            freqs_w = custom_freqs
+        elif freqs_for == 'lang':                                       # language mode
+            dimension_index = torch.arange(0, dim, 2)[:(dim // 2)]      # RoPE needs: number_of_frequencies = number_of_dimension_pairs = dim//2
+            freqs_w = 1. / (theta ** (dimension_index.float() / dim))   # based on classic RoPE frequency formula
+        elif freqs_for == 'pixel':                                      # pixel mode, used for vision, linear frequency spacing, better suited for spatial data
+            freqs_w = torch.linspace(1., max_freq / 2, dim // 2) * pi
+        elif freqs_for == 'constant':
+            freqs_w = torch.ones(num_freqs).float()                     # every dimension uses same frequency
+        else:
+            raise ValueError(f'unknown modality {freqs_for}')   
+        
+        if ft_seq_len is None: ft_seq_len = pt_seq_len
+        t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len          # t is the fine-tuning token positions, we stretch them (shorter or longer) into the pretraining coordinate scale
+        
+        
+
+
+
 
 class RMSNorm(nn.Module):
     pass
