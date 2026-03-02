@@ -34,7 +34,7 @@ def rotate_half(x):
     x = torch.stack((-x2, x1), dim=-1)              # perform a vectorized 90° rotation of every 2D chunk in parallel
     return rearrange(x, '... d r -> ... (d r)')     # flatten the last two dimensions back into the original shape
 
-class VisionRotaryEmbedding(nn.Module):
+class VisionRotaryEmbedding(nn.Module):     # for general rotary embedding -> 2D grid of frequencies
     """
         Vision Rotary Embedding (ViRoPE) is a 2D extension of Rotary Position Embedding (RoPE) used in Transformers.
         It encodes image spatial position (height and width) directly into attention features by rotating query and key vectors in embedding space.
@@ -120,7 +120,7 @@ class VisionRotaryEmbedding(nn.Module):
         """
         return torch.cat((t_left, t, t_right), dim = -1)
 
-class VisionRotaryEmbeddingFast(nn.Module):
+class VisionRotaryEmbeddingFast(nn.Module):     # for ViT-style fast inference/training -> standard ViT token layout: [B, N_tokens, D]
     def __init__(
             self, 
             dim,                   # feature dimension to rotate (embedding dimension)
@@ -156,7 +156,7 @@ class VisionRotaryEmbeddingFast(nn.Module):
         if ft_seq_len is None: ft_seq_len = pt_seq_len
         t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len          # t is the fine-tuning token positions, we stretch them (shorter or longer) into the pretraining coordinate scale
         
-        
+
 
 
 
