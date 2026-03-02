@@ -156,10 +156,29 @@ class VisionRotaryEmbeddingFast(nn.Module):     # for ViT-style fast inference/t
         if ft_seq_len is None: ft_seq_len = pt_seq_len
         t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len          # t is the fine-tuning token positions, we stretch them (shorter or longer) into the pretraining coordinate scale
         
+        freqs = t.unsqueeze(-1) * freqs                                             # (seq_len, dim//2)
+        freqs = repeat(freqs, '... n -> ... (n r)', r = 2)                          # (seq_len, dim)
+        freqs = broad_concat((freqs[:, None, :], freqs[None, :, :]), dim = -1)      # (seq_len, seq_len, dim*2)
 
+        if num_cls_token > 0:
+            freqs_flat = freqs.view(-1, freqs.shape[-1])  # (seq_len*seq_len, dim*2) = (N_img, D)
+            cos_img = freqs_flat.cos()                    # (N_img, D)
+            sin_img = freqs_flat.sin()                    # (N_img, D)
+        
+            # add a CLS token to the beginning of the input sequence before feeding it into the model
+            N_img, D = cos_img.shape
+            cos_pad = torch.ones(num_cls_token, D, dtype=cos_img.dtype, device=cos_img.device)      # (num_cls_token, D)
+            sin_pad = torch.zeros(num_cls_token, D, dtype=sin_img.dtype, device=sin_img.device)     # (num_cls_token, D)
+            self.freqs_cos = torch.cat([cos_pad, cos_img], dim=0).cuda()                            # [num_cls_token+N_img, D]
+            self.freqs_sin = torch.cat([sin_pad, sin_img], dim=0).cuda()                            # [num_cls_token+N_img, D]
+        else:
+            self.freqs_cos = freqs.cos().view(-1, freqs.shape[-1]).cuda()                           # (N_img, D)
+            self.freqs_sin = freqs.sin().view(-1, freqs.shape[-1]).cuda()                           # (N_img, D)
 
-
-
+    def forward(self, t):   
+        # t.shape = (B, N_tokens, D), where N_tokens = H × W (+ num_cls_token), this matches the standard ViT representation
+        return t * self.freqs_cos + rotate_half(t) * self.freqs_sin     
+        # output.shape = (B, N_tokens, D) -> no dimension changes, only values are rotated
 
 class RMSNorm(nn.Module):
     pass
