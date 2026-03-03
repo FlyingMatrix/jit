@@ -180,5 +180,61 @@ class VisionRotaryEmbeddingFast(nn.Module):     # for ViT-style fast inference/t
         return t * self.freqs_cos + rotate_half(t) * self.freqs_sin     
         # output.shape = (B, N_tokens, D) -> no dimension changes, only values are rotated
 
-class RMSNorm(nn.Module):
-    pass
+class RMSNorm(nn.Module):   # root mean square normalization
+    """
+        RMSNorm is a neural network normalization technique that rescales a vector based on its root mean square (RMS) value
+        without subtracting the mean.
+        It is commonly used in modern transformer models (like LLaMA) as a simpler and faster alternative to LayerNorm.
+    """
+    def __init__(self, hidden_size, eps=1e-6):
+        super().__init__()
+        # create a learnable scaling vector of size hidden_size for model to re-scale each feature dimension appropriately after normalization
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.variance_epsilon = eps
+
+    def forward(self, hidden_states):   # input shape is typically: (batch_size, seq_length, hidden_size), normalization happens across the last dimension
+        # save original dtype: models often use float16 or bfloat16, for numerical stability, normalization is done in float32 then converted back
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(torch.float32)
+        variance = hidden_states.pow(2).mean(-1, keepdim=True)
+        # compute normalization factor
+        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+        # element-wise multiply by learned scaling vector to adjust magnitude per dimension
+        return (self.weight * hidden_states).to(input_dtype)
+    
+def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=0):   
+    """
+        generate a non-learnable 2D sine-cosine positional embeddings for a square grid of size: grid_size * grid_size
+        return shape: (grid_size * grid_size, embed_dim) or (extra_tokens + grid_size * grid_size, embed_dim) when using class token
+    """
+    # create row and column indices
+    grid_h = np.arange(grid_size, dtype=np.float32)     # (grid_size, ) -> 1D array
+    grid_w = np.arange(grid_size, dtype=np.float32)     # (grid_size, ) -> 1D array
+    # create 2D grid
+    grid = np.meshgrid(grid_w, grid_h)                  # grid is a list of 2 arrays, each (grid_size, grid_size)
+    grid = np.stack(grid, axis=0)                       # take the list of arrays and stack them along a new axis -> (2, grid_size, grid_size)
+    grid = grid.reshape([2, 1, grid_size, grid_size])   # (2, 1, grid_size, grid_size)
+    # generate sine-cosine embeddings
+    pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
+
+
+def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
+    assert embed_dim % 2 == 0
+
+
+def get_1d_sincos_pos_embed_from_grid(embed_dim, pos): 
+    """ 
+        embed_dim: output dimension for each position
+              pos: a list of positions to be encoded -> size (M,)
+           output: (M, embed_dim)
+    """
+    assert embed_dim % 2 == 0                           # sinusoidal encoding splits embed_dim evenly into sine and cosine parts
+    i = np.arange(embed_dim//2, dtype=np.float64)       # i = dimension index // 2 -> [0, 1, 2, ..., (embed_dim/2 - 1)]
+    omega = 1. / (10000 ** (2 * i / embed_dim))         # (embed_dim/2,)
+    pos = pos.reshape(-1)                               # (M,)
+    out = np.einsum('m,d->md', pos, omega)              # outer product: out[m,d] = pos[m] ∗ omega[d] -> (M, embed_dim/2)
+    emb_sin = np.sin(out)                               # (M, embed_dim/2)
+    emb_cos = np.cos(out)                               # (M, embed_dim/2)
+    emb = np.concatenate([emb_sin, emb_cos], axis=1)    # (M, embed_dim): first half -> emb_sin, second half -> emb_cos
+    return emb
+    
