@@ -215,12 +215,20 @@ def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=
     grid = np.stack(grid, axis=0)                       # take the list of arrays and stack them along a new axis -> (2, grid_size, grid_size)
     grid = grid.reshape([2, 1, grid_size, grid_size])   # (2, 1, grid_size, grid_size)
     # generate sine-cosine embeddings
-    pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
+    pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)  # (grid_size*grid_size, embed_dim)
 
+    if cls_token and extra_tokens > 0:
+        pos_embed = np.concatenate([np.zeros([extra_tokens, embed_dim]), pos_embed], axis=0)
+    return pos_embed    # (grid_size*grid_size (+ extra_tokens), embed_dim)
 
-def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
+def get_2d_sincos_pos_embed_from_grid(embed_dim, grid): # grid -> (2, 1, grid_size, grid_size), grid[0] -> width(x), grid[1] -> height(y)
     assert embed_dim % 2 == 0
-
+    # standard sinusoidal positional encoding (from Transformers) is 1D
+    # to make it 2D, we encode height and width separately and then concatenate them 
+    emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[0])  # (grid_size*grid_size, embed_dim//2)
+    emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[1])  # (grid_size*grid_size, embed_dim//2)
+    emb = np.concatenate([emb_h, emb_w], axis=1)                        # (grid_size*grid_size, embed_dim)
+    return emb
 
 def get_1d_sincos_pos_embed_from_grid(embed_dim, pos): 
     """ 
