@@ -61,7 +61,7 @@ class TimestepEmbedder(nn.Module):  # scalar timesteps embedding
     @staticmethod
     def timestep_embedding(t, dim, max_period=10000):
         """
-                input: a tensor of timesteps t of shape (batch_size,)
+             input: a tensor of timesteps t of shape (batch_size,)
             output: an embedding vector of shape (batch_size, dim)
         """
         # calculate frequencies based on the function: freqs = max_period ** (-index / half), which is from openai -> glide_text2im/nn.py
