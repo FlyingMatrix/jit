@@ -58,29 +58,29 @@ class TimestepEmbedder(nn.Module):  # scalar timesteps embedding
         )
         self.frequency_embedding_size = frequency_embedding_size
 
-        @staticmethod
-        def timestep_embedding(t, dim, max_period=10000):
-            """
-                 input: a tensor of timesteps t of shape (batch_size,)
-                output: an embedding vector of shape (batch_size, dim)
-            """
-            # calculate frequencies based on the function: freqs = max_period ** (-index / half), which is from openai -> glide_text2im/nn.py
-            half = dim // 2
-            index = torch.arange(start=0, end=half, dtype=torch.float32)     # index -> (dim//2,)
-            freqs = max_period ** (-index / half).to(device=t.device)        # freqs -> (dim//2,)
-            # multiply by timesteps
-            args = t[:, None].float() * freqs[None]     # (batch_size, 1) * (1, dim//2) -> (batch_size, dim//2)
-            # concatenate
-            embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)   # embedding.shape = torch.Tensor(batch_size, dim)
-            # in odd dimension case, one zero column is appended
-            if dim % 2: # in odd dimension case, embedding.shape = torch.Tensor(batch_size, dim-1)
-                embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)  # now, embedding.shape = torch.Tensor(batch_size, dim)
-            return embedding    # embedding.shape = torch.Tensor(batch_size, dim)
-        
-        def forward(self, t):   # t.shape = (batch_size,)
-            t_embedding = self.timestep_embedding(t, self.frequency_embedding_size)  # t_embedding.shape = torch.Tensor(batch_size, self.frequency_embedding_size)
-            # pass the t_embedding through MLP to make it can be learned by the model
-            t_embedding = self.mlp(t_embedding)
-            return t_embedding  # t_embedding.shape = torch.Tensor(batch_size, hidden_size)
+    @staticmethod
+    def timestep_embedding(t, dim, max_period=10000):
+        """
+                input: a tensor of timesteps t of shape (batch_size,)
+            output: an embedding vector of shape (batch_size, dim)
+        """
+        # calculate frequencies based on the function: freqs = max_period ** (-index / half), which is from openai -> glide_text2im/nn.py
+        half = dim // 2
+        index = torch.arange(start=0, end=half, dtype=torch.float32)     # index -> (dim//2,)
+        freqs = max_period ** (-index / half).to(device=t.device)        # freqs -> (dim//2,)
+        # multiply by timesteps
+        args = t[:, None].float() * freqs[None]     # (batch_size, 1) * (1, dim//2) -> (batch_size, dim//2)
+        # concatenate
+        embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)   # embedding.shape = torch.Tensor(batch_size, dim)
+        # in odd dimension case, one zero column is appended
+        if dim % 2: # in odd dimension case, embedding.shape = torch.Tensor(batch_size, dim-1)
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)  # now, embedding.shape = torch.Tensor(batch_size, dim)
+        return embedding    # embedding.shape = torch.Tensor(batch_size, dim)
+    
+    def forward(self, t):   # t.shape = (batch_size,)
+        t_embedding = self.timestep_embedding(t, self.frequency_embedding_size)  # t_embedding.shape = torch.Tensor(batch_size, self.frequency_embedding_size)
+        # pass the t_embedding through MLP to make it can be learned by the model
+        t_embedding = self.mlp(t_embedding)
+        return t_embedding  # t_embedding.shape = torch.Tensor(batch_size, hidden_size)
 
 
