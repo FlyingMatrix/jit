@@ -88,4 +88,9 @@ class LabelEmbedder(nn.Module):
         embed class labels into vector representations, and handle label dropout which sometimes removes those labels 
         so the model can learn both conditional and unconditional predictions, this enables classifier-free guidance during generation.
     """
-    
+    def __init__(self, num_classes, hidden_size):
+        super().__init__()
+
+    def forward(self, labels):
+        pass
+
